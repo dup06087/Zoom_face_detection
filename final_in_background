@@ -1,0 +1,116 @@
+import sys
+import cv2
+import mediapipe as mp
+from mediapipe.python.solutions.drawing_utils import DrawingSpec
+from pywinauto.application import Application
+import numpy as np
+import win32gui
+import win32ui
+from ctypes import windll
+from PIL import Image
+
+mp_face_detection = mp.solutions.face_detection
+mp_drawing = mp.solutions.drawing_utils
+
+print("20초 이내에 zoom 회의를 켜십시오")
+try:
+  app = Application(backend='uia').connect(title='Zoom 회의', timeout=20)
+  app = app.top_window()
+except:
+  print("fail")
+  sys.exit()
+
+print("success")
+app.set_focus()
+
+hwnd = win32gui.FindWindow(None, 'Zoom 회의')
+
+# Change the line below depending on whether you want the whole window
+# or just the client area.
+left, top, right, bot = win32gui.GetWindowRect(hwnd)
+w = right - left
+h = bot - top
+
+hwndDC = win32gui.GetWindowDC(hwnd)
+mfcDC  = win32ui.CreateDCFromHandle(hwndDC)
+saveDC = mfcDC.CreateCompatibleDC()
+
+saveBitMap = win32ui.CreateBitmap()
+saveBitMap.CreateCompatibleBitmap(mfcDC, w, h)
+
+saveDC.SelectObject(saveBitMap)
+
+
+# For static images:
+IMAGE_FILES = []
+with mp_face_detection.FaceDetection(
+    model_selection=1, min_detection_confidence=0.5) as face_detection:
+  for idx, file in enumerate(IMAGE_FILES):
+    image = cv2.imread(file)
+    # Convert the BGR image to RGB and process it with MediaPipe Face Detection.
+    results = face_detection.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+
+    # Draw face detections of each face.
+    if not results.detections:
+      continue
+    annotated_image = image.copy()
+    for detection in results.detections:
+      print('Nose tip:')
+      print(mp_face_detection.get_key_point(
+          detection, mp_face_detection.FaceKeyPoint.NOSE_TIP))
+      mp_drawing.draw_detection(annotated_image, detection)
+    cv2.imwrite('/tmp/annotated_image' + str(idx) + '.png', annotated_image)
+
+
+with mp_face_detection.FaceDetection(
+    model_selection=0, min_detection_confidence=0.5) as face_detection:
+  while True:
+    result = windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 2)
+    print(result)
+
+    bmpinfo = saveBitMap.GetInfo()
+    bmpstr = saveBitMap.GetBitmapBits(True)
+
+    img = Image.frombuffer(
+      'RGB',
+      (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
+      bmpstr, 'raw', 'BGRX', 0, 1)
+
+    print(img)
+    print(type(img))
+    npimg = np.array(img)
+    image = cv2.cvtColor(npimg, cv2.COLOR_RGB2BGR)
+
+    # To improve performance, optionally mark the image as not writeable to
+    # pass by reference.
+    image.flags.writeable = False
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = face_detection.process(image)
+
+    # Draw the face detection annotations on the image.
+    image.flags.writeable = True
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    if results.detections:
+      for detection in results.detections:
+
+        nose_x = mp_face_detection.get_key_point(detection, 2).x
+        right_ear_x = mp_face_detection.get_key_point(detection, 4).x
+        left_ear_x = mp_face_detection.get_key_point(detection, 5).x
+        if ((left_ear_x - right_ear_x) * 0.1 < (nose_x - right_ear_x)) and (
+                (left_ear_x - right_ear_x) * 0.9 > (nose_x - right_ear_x)):
+          pass
+
+        elif abs(nose_x - right_ear_x) < abs(left_ear_x - nose_x):
+          mp_drawing.draw_detection(image, detection, keypoint_drawing_spec=DrawingSpec(color=mp_drawing.RED_COLOR),
+                                    bbox_drawing_spec=DrawingSpec(color=mp_drawing.RED_COLOR))
+
+        else:
+          mp_drawing.draw_detection(image, detection, keypoint_drawing_spec = DrawingSpec(color = mp_drawing.RED_COLOR) ,bbox_drawing_spec=DrawingSpec(color=mp_drawing.RED_COLOR))
+
+    # Flip the image horizontally for a selfie-view display.
+    cv2.imshow('Detection', image)
+
+    if cv2.waitKey(5) & 0xFF == 27:
+      break
+
+sys.exit()
