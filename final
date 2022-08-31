@@ -18,8 +18,6 @@ except:
 
 print("success")
 app.set_focus()
-img = app.capture_as_image()
-img.save('scrshot.png')
 
 # For static images:
 IMAGE_FILES = []
@@ -45,7 +43,6 @@ with mp_face_detection.FaceDetection(
 with mp_face_detection.FaceDetection(
     model_selection=0, min_detection_confidence=0.5) as face_detection:
   while True:
-    # time.sleep(1)
     img = app.capture_as_image()
     npimg = np.array(img)
     image = cv2.cvtColor(npimg, cv2.COLOR_RGB2BGR)
